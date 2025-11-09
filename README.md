@@ -1,0 +1,2 @@
+# bjtuFlashRAG
+2025竞赛：基于FlashRAG的智能DeepSearch系统设计
