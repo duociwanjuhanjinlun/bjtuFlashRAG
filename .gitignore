@@ -1,0 +1,42 @@
+# 系统文件
+.bash_history
+.bashrc
+.profile
+.tcshrc
+.xonshrc
+.zshrc
+.ssh/
+
+# 缓存和配置
+.cache/
+.config/
+.conda/
+.local/
+.jupyter/
+.cursor-server/
+.cursor/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
