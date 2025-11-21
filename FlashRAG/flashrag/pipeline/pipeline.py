@@ -53,14 +53,14 @@ class SequentialPipeline(BasicPipeline):
             self.generator = get_generator(config)
         else:
             self.generator = generator
-        print(self.generator)
+        print(f"[Pipeline] init generator: {self.generator}")
         if retriever is None:
             print("[Pipeline] init retriever...") 
             self.retriever = get_retriever(config)
         else:
             print("[Pipeline] init retriever from config...") 
             self.retriever = retriever
-        print(self.retriever)
+        print(f"[Pipeline] init retriever: {self.retriever}")
         # TODO: add rewriter module
 
         self.use_fid = config["use_fid"]
@@ -69,7 +69,7 @@ class SequentialPipeline(BasicPipeline):
             self.refiner = get_refiner(config, self.retriever, self.generator)
         else:
             self.refiner = None
-        print(self.refiner)
+        print(f"[Pipeline] init refiner: {self.refiner}")
         
     def naive_run(self, dataset, do_eval=True, pred_process_fun=None):
         # direct generation without RAG

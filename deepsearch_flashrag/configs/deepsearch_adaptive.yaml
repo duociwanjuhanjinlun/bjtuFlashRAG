@@ -44,7 +44,7 @@ generator_model: "llama3-8B-instruct"
 #generator_model_path: "/public/huggingface-models/Qwen/Qwen2.5-7B-Instruct-GGUF"
 generator_model_path: "/public/huggingface-models/meta-llama/Meta-Llama-3-8B"
 generator_batch_size: 2  # 原: 2
-generator_max_input_len: 512 # 原: 512
+generator_max_input_len: 1024 # 原: 512
 generation_params:
   temperature: 0.2
   max_tokens: 300
