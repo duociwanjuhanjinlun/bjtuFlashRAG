@@ -7,6 +7,10 @@ dist/*
 upload_pypi.sh
 tests/*
 
+docs/
+asset/
+webui/
+.github
 # 排除大文件：索引文件和大型数据文件
 **/indexes/*.index
 **/indexes/*.jsonl

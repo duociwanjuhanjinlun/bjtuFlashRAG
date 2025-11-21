@@ -26,8 +26,12 @@ retrieval_topk: 5
 retrieval_batch_size: 2  # 原: 32
 retrieval_use_fp16: True
 retrieval_query_max_length: 96
-faiss_gpu: True
+use_retrieval_cache: False
+save_retrieval_cache: False
+load_retrieval_cache: False
+retrieval_cache_path: "/data/bjtu_deepsearch/output/retrieval_cache.json"
 
+faiss_gpu: False
 use_reranker: True
 rerank_model_name: "Qwen3-Reranker-4B"
 rerank_model_path: "/public/huggingface-models/Qwen/Qwen3-Reranker-4B"
@@ -39,14 +43,14 @@ generator_model: "llama3-8B-instruct"
 #generator_model: "Qwen/Qwen2.5-7B-Instruct-GGUF"
 #generator_model_path: "/public/huggingface-models/Qwen/Qwen2.5-7B-Instruct-GGUF"
 generator_model_path: "/public/huggingface-models/meta-llama/Meta-Llama-3-8B"
-generator_batch_size: 1  # 原: 2
-generator_max_input_len: 512
+generator_batch_size: 2  # 原: 2
+generator_max_input_len: 512 # 原: 512
 generation_params:
   temperature: 0.2
   max_tokens: 300
   #do_sample: False
 use_fid: False
-gpu_memory_utilization: 0.6  # 原: 0.8
+gpu_memory_utilization: 0.8  # 原: 0.8
 
 judger_name: "adaptive"
 judger_config:
