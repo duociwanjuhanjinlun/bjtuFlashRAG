@@ -1,0 +1,12 @@
+**/.history
+*.pyc
+*.egg-info
+build/
+.idea/
+dist/*
+upload_pypi.sh
+tests/*
+
+# 排除大文件：索引文件和大型数据文件
+**/indexes/*.index
+**/indexes/*.jsonl

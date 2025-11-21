@@ -41,3 +41,10 @@ ENV/
 .DS_Store
 Thumbs.db
 
+# trae
+.trae-cn/
+.trae-cn-server/
+.trae-aicc/
+.antigravity-server/
+
+.lesshst
