@@ -26,7 +26,8 @@ env/
 venv/
 ENV/
 .venv
-
+.python_history
+.ipython
 # Jupyter Notebook
 .ipynb_checkpoints
 
