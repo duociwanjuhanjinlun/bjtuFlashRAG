@@ -120,9 +120,17 @@ class BiReranker(BaseReranker):
         )
 
     def get_rerank_scores(self, query_list, doc_list, batch_size):
+        # 过滤空查询，用占位符替换
+        processed_query_list = []
+        for query in query_list:
+            if query and query.strip():
+                processed_query_list.append(query)
+            else:
+                processed_query_list.append(" ")  # 使用单个空格作为占位符
+        
         query_emb = []
-        for start_idx in range(0, len(query_list), batch_size):
-            query_batch = query_list[start_idx : start_idx + batch_size]
+        for start_idx in range(0, len(processed_query_list), batch_size):
+            query_batch = processed_query_list[start_idx : start_idx + batch_size]
             batch_emb = self.encoder.encode(query_batch, is_query=True)
             query_emb.append(batch_emb)
         query_emb = np.concatenate(query_emb, axis=0)

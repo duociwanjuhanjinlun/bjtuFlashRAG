@@ -116,14 +116,16 @@ class EncoderDecoderGenerator(BaseGenerator):
             from flashrag.generator.stop_word_criteria import StopWordCriteria
 
             stop_sym = generation_params.pop("stop")
-            stopping_criteria = [
-                StopWordCriteria(
-                    tokenizer=self.tokenizer,
-                    prompts=input_list,
-                    stop_words=stop_sym,
-                )
-            ]
-            generation_params["stopping_criteria"] = stopping_criteria
+            # 只有当stop不是None且不是空列表时才创建StopWordCriteria
+            if stop_sym is not None and (isinstance(stop_sym, list) and len(stop_sym) > 0):
+                stopping_criteria = [
+                    StopWordCriteria(
+                        tokenizer=self.tokenizer,
+                        prompts=input_list,
+                        stop_words=stop_sym,
+                    )
+                ]
+                generation_params["stopping_criteria"] = stopping_criteria
 
         generation_params = resolve_max_tokens(params, generation_params, prioritize_new_tokens=True)
 
@@ -236,7 +238,14 @@ class VLLMGenerator(BaseGenerator):
 
         # fix for llama3
         if "stop" in generation_params:
-            generation_params["stop"].append("<|eot_id|>")
+            stop_value = generation_params["stop"]
+            # 如果stop是None，初始化为空列表
+            if stop_value is None:
+                generation_params["stop"] = ["<|eot_id|>"]
+            elif isinstance(stop_value, list):
+                generation_params["stop"] = stop_value + ["<|eot_id|>"]
+            else:
+                generation_params["stop"] = [stop_value, "<|eot_id|>"]
             generation_params["include_stop_str_in_output"] = True
         else:
             generation_params["stop"] = ["<|eot_id|>"]
@@ -379,14 +388,16 @@ class HFCausalLMGenerator(BaseGenerator):
             from flashrag.generator.stop_word_criteria import StopWordCriteria
 
             stop_sym = generation_params.pop("stop")
-            stopping_criteria = [
-                StopWordCriteria(
-                    tokenizer=self.tokenizer,
-                    prompts=input_list,
-                    stop_words=stop_sym,
-                )
-            ]
-            generation_params["stopping_criteria"] = stopping_criteria
+            # 只有当stop不是None且不是空列表时才创建StopWordCriteria
+            if stop_sym is not None and (isinstance(stop_sym, list) and len(stop_sym) > 0):
+                stopping_criteria = [
+                    StopWordCriteria(
+                        tokenizer=self.tokenizer,
+                        prompts=input_list,
+                        stop_words=stop_sym,
+                    )
+                ]
+                generation_params["stopping_criteria"] = stopping_criteria
 
         generation_params = resolve_max_tokens(params, generation_params, prioritize_new_tokens=True)
 

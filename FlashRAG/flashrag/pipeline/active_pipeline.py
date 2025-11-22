@@ -983,7 +983,13 @@ class IRCOTPipeline(BasicPipeline):
             
 
             # Batch generation for active items
-            new_thoughts_batch = self.generator.generate(input_prompts, stop=['.', '\n'])
+            # 移除过于严格的stop参数，改为更合理的停止条件
+            # 使用更长的生成长度，确保能产生有意义的输出
+            # 不传递stop参数，让模型自然生成（而不是传递stop=None）
+            new_thoughts_batch = self.generator.generate(
+                input_prompts, 
+                max_tokens=128  # 确保至少生成一些内容
+            )
             
             # Update thoughts and determine next active items
             new_active_item_ids = []
@@ -1009,7 +1015,14 @@ class IRCOTPipeline(BasicPipeline):
             # Perform batch retrieval for new thoughts of active items
             if active_item_ids:
                 new_thoughts_for_retrieval = [batch_thoughts[item_id][-1] for item_id in active_item_ids]
-                new_retrieval_results, new_scoress = self.retriever.batch_search(new_thoughts_for_retrieval, return_score=True)
+                # 过滤空查询，用占位符替换
+                processed_thoughts = []
+                for thought in new_thoughts_for_retrieval:
+                    if thought and thought.strip():
+                        processed_thoughts.append(thought)
+                    else:
+                        processed_thoughts.append(" ")  # 使用单个空格作为占位符
+                new_retrieval_results, new_scoress = self.retriever.batch_search(processed_thoughts, return_score=True)
 
                 for i, item_id in enumerate(active_item_ids):
                     new_retrieval_result, new_scores = new_retrieval_results[i],new_scoress[i]
@@ -1033,7 +1046,26 @@ class IRCOTPipeline(BasicPipeline):
         # Final update for each item in the batch
         for item_id, item in enumerate(items):
             item.update_output('retrieval_result', batch_retrieval_results[item_id])
-            item.update_output('pred', ' '.join(batch_thoughts[item_id]))
+            # 提取最终答案：查找"So the answer is:"后的内容
+            all_thoughts = ' '.join(batch_thoughts[item_id])
+            final_answer = all_thoughts
+            if "So the answer is:" in all_thoughts:
+                # 提取"So the answer is:"后的内容
+                answer_part = all_thoughts.split("So the answer is:")[-1].strip()
+                # 只取第一句或前100个字符
+                import re
+                # 移除开头的标点
+                answer_part = re.sub(r'^[:\-\s]+', '', answer_part)
+                # 如果太长，只取第一句
+                first_period = answer_part.find('.')
+                if first_period > 0 and first_period < 100:
+                    final_answer = answer_part[:first_period].strip()
+                elif len(answer_part) > 100:
+                    final_answer = answer_part[:100].strip()
+                else:
+                    final_answer = answer_part
+            item.update_output('pred', final_answer)
+            item.update_output('raw_pred', all_thoughts)  # 保存完整输出用于调试
 
     def run(self, dataset, do_eval=True, pred_process_fun=ircot_pred_parse):
 

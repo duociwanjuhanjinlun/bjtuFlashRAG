@@ -25,6 +25,8 @@ from flashrag.pipeline import (
 )
 from flashrag.utils import get_dataset
 from deepsearch_flashrag.prompts.deepsearch_prompt import DeepSearchPromptTemplate
+from deepsearch_flashrag.prompts.ircot_improved_prompt import ImprovedIRCOTPromptTemplate
+from deepsearch_flashrag.prompts.ircot_concise_prompt import ConciseIRCOTPromptTemplate
 
 
 PIPELINE_FACTORY = {
@@ -79,15 +81,20 @@ def main():
     
     # 使用自定义prompt模板
     if args.use_custom_prompt:
-        prompt_template = DeepSearchPromptTemplate(config)
-        print("Using optimized DeepSearch prompt template")
+        if args.pipeline == "ircot":
+            # IRCoT使用专门的简洁prompt（强调最终答案格式）
+            prompt_template = ConciseIRCOTPromptTemplate(config)
+            print("Using concise IRCoT prompt template (emphasizes final answer format)")
+        else:
+            prompt_template = DeepSearchPromptTemplate(config)
+            print("Using optimized DeepSearch prompt template")
     else:
         prompt_template = None
         print("Using default prompt template")
     
     # 对于IRCoT pipeline，需要特殊处理
     if args.pipeline == "ircot":
-        pipeline = pipeline_cls(config, prompt_template=prompt_template, max_iter=5)
+        pipeline = pipeline_cls(config, prompt_template=prompt_template, max_iter=3)
     else:
         pipeline = pipeline_cls(config, prompt_template=prompt_template)
     

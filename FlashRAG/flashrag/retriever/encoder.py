@@ -39,9 +39,17 @@ class Encoder:
     @torch.inference_mode()
     def single_batch_encode(self, query_list: Union[List[str], str], is_query=True) -> np.ndarray:
         query_list = parse_query(self.model_name, query_list, self.instruction, is_query)
+        
+        # 过滤空查询，用占位符替换以避免模型错误
+        processed_query_list = []
+        for q in query_list:
+            if q and q.strip():
+                processed_query_list.append(q)
+            else:
+                processed_query_list.append(" ")  # 使用单个空格作为占位符
 
         inputs = self.tokenizer(
-            query_list, max_length=self.max_length, padding=True, truncation=True, return_tensors="pt"
+            processed_query_list, max_length=self.max_length, padding=True, truncation=True, return_tensors="pt"
         )
         inputs = {k: v.to(get_device()) for k, v in inputs.items()}
 
