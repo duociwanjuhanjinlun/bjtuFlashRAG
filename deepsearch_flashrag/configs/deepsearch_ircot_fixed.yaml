@@ -24,7 +24,7 @@ retrieval_method: "e5"
 retrieval_model_path: "/public/huggingface-models/intfloat/e5-base-v2"
 index_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w_e5.index"
 corpus_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w.jsonl"
-retrieval_topk: 10  # 进一步增加检索数量，提高召回率
+retrieval_topk: 20  # 增加检索数量，提高召回率（从10增加到20）
 retrieval_batch_size: 2
 retrieval_use_fp16: True
 retrieval_query_max_length: 512  # 增加查询长度以捕获更多信息
@@ -36,9 +36,9 @@ faiss_gpu: False
 use_reranker: True
 rerank_model_name: "Qwen3-Reranker-8B"  # 改用更稳定的bge-reranker
 rerank_model_path: "/public/huggingface-models/Qwen/Qwen3-Reranker-8B"
-rerank_topk: 6  # rerank后保留更多文档
+rerank_topk: 8  # rerank后保留更多文档
 rerank_batch_size: 4
-rerank_max_length: 512
+rerank_max_length: 1024
 rerank_use_fp16: True
 
 # ========== 改进3: 优化生成参数 ==========
@@ -46,10 +46,10 @@ framework: "fschat"
 generator_model: "Qwen/Qwen2.5-14B-Instruct-1M"
 generator_model_path: "/public/huggingface-models/Qwen/Qwen2.5-14B-Instruct-1M"
 generator_batch_size: 1  # 降低batch size确保稳定性
-generator_max_input_len: 4096  # 增加输入长度以容纳更多上下文
+generator_max_input_len: 5120  # 增加输入长度以容纳更多上下文
 generation_params:
   temperature: 0.1  # 降低temperature提高确定性，生成更精确的答案
-  max_tokens: 512  # 减少每次迭代的token数，避免冗长输出
+  max_tokens: 1024  # 减少每次迭代的token数，避免冗长输出
   top_p: 0.9
 use_fid: False
 gpu_memory_utilization: 0.85
@@ -64,5 +64,5 @@ metric_setting:
   tokenizer_name: "gpt-3.5-turbo"
 save_metric_score: True
 
-test_sample_num: 25
+test_sample_num: 10
 

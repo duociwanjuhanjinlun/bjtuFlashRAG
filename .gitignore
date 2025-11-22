@@ -28,6 +28,7 @@ ENV/
 .venv
 .python_history
 .ipython
+.pycharm_helpers
 # Jupyter Notebook
 .ipynb_checkpoints
 

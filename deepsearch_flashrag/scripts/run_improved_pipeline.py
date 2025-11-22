@@ -94,7 +94,8 @@ def main():
     
     # 对于IRCoT pipeline，需要特殊处理
     if args.pipeline == "ircot":
-        pipeline = pipeline_cls(config, prompt_template=prompt_template, max_iter=3)
+        # 增加迭代轮数到5，提高检索覆盖率
+        pipeline = pipeline_cls(config, prompt_template=prompt_template, max_iter=5)
     else:
         pipeline = pipeline_cls(config, prompt_template=prompt_template)
     

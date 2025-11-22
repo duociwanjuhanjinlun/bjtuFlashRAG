@@ -1,4 +1,6 @@
 import re
+import sys
+import os
 from tqdm import tqdm
 from typing import List, Tuple
 import math
@@ -8,6 +10,20 @@ from flashrag.utils import get_retriever, get_generator, selfask_pred_parse, irc
 from flashrag.pipeline import BasicPipeline
 from flashrag.dataset.utils import get_batch_dataset, merge_batch_dataset
 from flashrag.prompt import PromptTemplate
+
+# 导入查询改进和答案验证工具
+try:
+    # 尝试从deepsearch_flashrag导入
+    deepsearch_path = os.path.join(os.path.dirname(__file__), '../../deepsearch_flashrag')
+    if os.path.exists(deepsearch_path) and deepsearch_path not in sys.path:
+        sys.path.insert(0, deepsearch_path)
+    from utils.query_improver import QueryImprover  # type: ignore
+    from utils.answer_verifier import AnswerVerifier  # type: ignore
+    ENABLE_IMPROVEMENTS = True
+except (ImportError, ModuleNotFoundError):
+    ENABLE_IMPROVEMENTS = False
+    QueryImprover = None  # type: ignore
+    AnswerVerifier = None  # type: ignore
 
 
 class IterativePipeline(BasicPipeline):
@@ -949,6 +965,14 @@ class IRCOTPipeline(BasicPipeline):
         self.retriever = get_retriever(config) if retriever is None else retriever
 
         self.max_iter = max_iter
+        
+        # 初始化查询改进器和答案验证器
+        if ENABLE_IMPROVEMENTS:
+            self.query_improver = QueryImprover()
+            self.answer_verifier = AnswerVerifier()
+        else:
+            self.query_improver = None
+            self.answer_verifier = None
 
     def run_batch(self, items):
         # Initialize the necessary data structures
@@ -1015,11 +1039,17 @@ class IRCOTPipeline(BasicPipeline):
             # Perform batch retrieval for new thoughts of active items
             if active_item_ids:
                 new_thoughts_for_retrieval = [batch_thoughts[item_id][-1] for item_id in active_item_ids]
-                # 过滤空查询，用占位符替换
+                # 改进查询：使用QueryImprover生成更具体的查询
                 processed_thoughts = []
-                for thought in new_thoughts_for_retrieval:
+                for idx, (item_id, thought) in enumerate(zip(active_item_ids, new_thoughts_for_retrieval)):
                     if thought and thought.strip():
-                        processed_thoughts.append(thought)
+                        # 使用查询改进器生成更具体的查询
+                        if self.query_improver is not None:
+                            question = items[item_id].question
+                            improved_query = self.query_improver.improve_query(question, thought)
+                            processed_thoughts.append(improved_query)
+                        else:
+                            processed_thoughts.append(thought)
                     else:
                         processed_thoughts.append(" ")  # 使用单个空格作为占位符
                 new_retrieval_results, new_scoress = self.retriever.batch_search(processed_thoughts, return_score=True)
@@ -1064,6 +1094,30 @@ class IRCOTPipeline(BasicPipeline):
                     final_answer = answer_part[:100].strip()
                 else:
                     final_answer = answer_part
+                
+                # 答案验证：检查答案是否满足所有约束条件
+                if self.answer_verifier is not None:
+                    is_valid, message, missing = self.answer_verifier.verify(
+                        question=item.question,
+                        answer=final_answer,
+                        retrieved_docs=batch_retrieval_results[item_id],
+                        thoughts=batch_thoughts[item_id]
+                    )
+                    
+                    # 如果验证失败，标记答案不可靠
+                    if not is_valid:
+                        # 可以选择：1) 返回"信息不足"，2) 保留原答案但标记，3) 触发额外检索
+                        # 这里我们选择保留原答案，但在输出中添加验证信息
+                        item.update_output('verification_status', 'failed')
+                        item.update_output('verification_message', message)
+                        item.update_output('missing_constraints', missing)
+                        # 如果缺失信息太多，可以返回"信息不足"
+                        if len(missing) > 2:
+                            final_answer = "[Insufficient information to determine the answer]"
+                    else:
+                        item.update_output('verification_status', 'passed')
+                        item.update_output('verification_message', message)
+            
             item.update_output('pred', final_answer)
             item.update_output('raw_pred', all_thoughts)  # 保存完整输出用于调试
 
