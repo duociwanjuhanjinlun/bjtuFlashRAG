@@ -92,17 +92,39 @@ class CrossReranker(BaseReranker):
         for start_idx in tqdm(range(0, len(all_pairs), batch_size), desc="Reranking process: "):
             pair_batch = all_pairs[start_idx : start_idx + batch_size]
 
-            inputs = self.tokenizer(
-                pair_batch, padding=True, truncation=True, return_tensors="pt", max_length=self.max_length
-            ).to(self.device)
-            batch_scores = (
-                self.ranker(**inputs, return_dict=True)
-                .logits.view(
-                    -1,
+            try:
+                inputs = self.tokenizer(
+                    pair_batch, padding=True, truncation=True, return_tensors="pt", max_length=self.max_length
+                ).to(self.device)
+                
+                # Check input shape before passing to model
+                if 'input_ids' in inputs:
+                    input_shape = inputs['input_ids'].shape
+                    # Verify batch size consistency
+                    if input_shape[0] != len(pair_batch):
+                        print(f"WARNING: Input batch size mismatch. Expected {len(pair_batch)}, got {input_shape[0]}")
+                
+                batch_scores = (
+                    self.ranker(**inputs, return_dict=True)
+                    .logits.view(
+                        -1,
+                    )
+                    .float()
+                    .cpu()
                 )
-                .float()
-                .cpu()
-            )
+            except Exception as e:
+                error_msg = str(e)
+                if "size of tensor" in error_msg or "dimension" in error_msg.lower():
+                    print(f"ERROR in CrossReranker: {error_msg}")
+                    print(f"  Batch size: {len(pair_batch)}, max_length: {self.max_length}")
+                    print(f"  Pair batch sample: {pair_batch[0] if pair_batch else 'empty'}")
+                    print(f"  This may be due to tokenizer/model dimension mismatch or input length issues")
+                    # Return zero scores for this batch to allow processing to continue
+                    # This allows other queries to be processed even if one batch fails
+                    import torch
+                    batch_scores = torch.zeros(len(pair_batch), dtype=torch.float32)
+                else:
+                    raise
             all_scores.extend(batch_scores)
 
         return all_scores

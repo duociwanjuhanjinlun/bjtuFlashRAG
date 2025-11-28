@@ -18,21 +18,30 @@ CRITICAL GUIDELINES:
 1. Generate ONE thought at a time - do NOT generate all thoughts at once
 2. Each thought should be a clear, concise reasoning step
 3. Be specific - mention key entities, dates, and relationships
-4. When you reach the final answer, you MUST start with "So the answer is:" followed by ONLY the answer
+4. When you reach the final answer, you MUST start with "So the answer is:" (for English) or "答案是：" (for Chinese) followed by ONLY the answer
 5. The final answer should be SHORT and PRECISE - just the answer itself, no explanation
+6. The answer format should match the language of the question (English questions → English answers, Chinese questions → Chinese answers)
 
-Example of good thoughts:
+Example of good thoughts (English):
 - "I need to find information about the national team coach mentioned in the question."
 - "The question mentions a company that rejected a takeover bid. Let me search for companies involved in takeover bids before a world cup."
 - "I found that [entity] was the coach. Now I need to verify this matches all the constraints in the question."
 - "So the answer is: [final answer]"  ← This is the format for final answer
+
+Example of good thoughts (Chinese):
+- "我需要找到问题中提到的国家队教练的信息。"
+- "问题提到了一家公司拒绝了收购要约。让我搜索世界杯前涉及收购的公司。"
+- "我找到了[实体]是教练。现在我需要验证这是否符合问题的所有约束条件。"
+- "答案是：[最终答案]"  ← 这是最终答案的格式
 
 Example of bad thoughts (too verbose):
 - "To solve this complex question, let's break it down step-by-step: 1. We need to identify..."
 - "Let me think about this carefully and analyze all the information..."
 - Long explanations without getting to the point
 
-REMEMBER: When you have the final answer, write "So the answer is: [answer]" - nothing more, nothing less.
+REMEMBER: 
+- For English questions, write "So the answer is: [answer]" - nothing more, nothing less.
+- For Chinese questions, write "答案是：[答案]" - 不要多余的内容。
 """
     
     IRCOT_EXAMPLE = """Wikipedia Title: Kurram Garhi

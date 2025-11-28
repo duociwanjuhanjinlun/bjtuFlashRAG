@@ -78,7 +78,16 @@ class Encoder:
     def encode(self, query_list: List[str], batch_size=64, is_query=True) -> np.ndarray:
         query_emb = []
         for i in tqdm(range(0, len(query_list), batch_size), desc="Encoding process: ", disable=self.silent):
-            query_emb.append(self.single_batch_encode(query_list[i : i + batch_size], is_query))
+            batch_emb = self.single_batch_encode(query_list[i : i + batch_size], is_query)
+            query_emb.append(batch_emb)
+        
+        if len(query_emb) == 0:
+            # Handle empty query list case gracefully to return empty array with correct shape
+            # Assuming embedding dimension can be inferred or default to something reasonable if possible,
+            # but usually encode is called with non-empty list.
+            # If called with empty list, return empty array.
+            return np.array([])
+            
         query_emb = np.concatenate(query_emb, axis=0)
         return query_emb
 

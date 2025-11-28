@@ -1,0 +1,155 @@
+# ========== 版本说明 ==========
+# wq_v5_pyserini.yaml - BM25(pyserini)与E5并行检索版本
+# 
+# 主要特点：
+# 1. 使用pyserini构建的BM25索引（更稳定，避免bm25s的批量检索问题）
+# 2. 启用BM25和E5并行检索（混合检索）
+# 3. 使用RRF（Reciprocal Rank Fusion）合并两个检索器的结果
+# 4. 保留v3版本的所有优化（答案提取器、自定义prompt等）
+# 5. 测试样本数设置为20
+# 6. 每个检索器检索50个文档，合并后rerank保留30个
+
+# ========== 模型路径配置 ==========
+model2path:
+  e5: "intfloat/e5-base-v2"
+  bge: "BAAI/bge-base-en-v1.5"
+  bge-reranker-large: "BAAI/bge-reranker-large"
+  Qwen3-Reranker-8B: "Qwen/Qwen3-Reranker-8B"
+  llama3-8B-instruct: "meta-llama/Meta-Llama-3-8B-Instruct"
+
+model2pooling:
+  e5: "mean"
+  bge: "cls"
+  bge-reranker-large: "cls"
+
+# ========== 数据路径配置 ==========
+data_dir: "/data/bjtu_deepsearch/dataset/"
+save_dir: "/data/bjtu_deepsearch/output/"
+dataset_name: "deepsearch"
+split: ["test"]
+
+# ========== 运行环境配置 ==========
+gpu_id: "0"
+seed: 2024
+
+# ========== 数据保存配置 ==========
+save_intermediate_data: True
+save_note: "deepsearch_ircot_bm25_pyserini_e5_hybrid"  # pyserini并行检索版本标识
+
+# ========== 核心配置：启用多检索器并行检索 ==========
+use_multi_retriever: True
+multi_retriever_setting:
+  merge_method: "rrf"  # 使用RRF（Reciprocal Rank Fusion）合并结果，更稳定
+  topk: 80  # 合并后保留的文档数量（用于rerank）
+  
+  retriever_list:
+    # BM25检索器配置（基于词匹配，擅长精确匹配专有名词）
+    # 使用pyserini后端（更稳定，避免bm25s的批量检索兼容性问题）
+    - retrieval_method: "bm25"
+      index_path: "/data/index/bm25_index_pyserini/bm25"
+      corpus_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w.jsonl"
+      retrieval_topk: 50  # BM25检索的topk
+      bm25_backend: "pyserini"  # 使用pyserini后端（与构建时一致）
+    
+    # E5向量检索器配置（基于语义理解，擅长语义相似性匹配）
+    - retrieval_method: "e5"
+      retrieval_model_path: "/public/huggingface-models/intfloat/e5-base-v2"
+      index_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w_e5.index"
+      corpus_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w.jsonl"
+      retrieval_topk: 50  # E5检索的topk
+      retrieval_pooling_method: "mean"
+      retrieval_use_fp16: True
+      retrieval_batch_size: 2
+      retrieval_query_max_length: 1024
+
+# ========== 单检索器配置（多检索器模式下这些配置会被忽略） ==========
+# 保留这些配置以保持兼容性，但在多检索器模式下不会使用
+retrieval_method: "e5"
+retrieval_model_path: "/public/huggingface-models/intfloat/e5-base-v2"
+index_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w_e5.index"
+corpus_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w.jsonl"
+retrieval_topk: 50
+retrieval_batch_size: 2
+retrieval_use_fp16: True
+retrieval_query_max_length: 1024
+use_retrieval_cache: False
+save_retrieval_cache: False
+faiss_gpu: False
+
+# ========== 改进2: 使用更强的reranker ==========
+use_reranker: True
+rerank_model_name: "Qwen3-Reranker-8B"
+rerank_model_path: "/public/huggingface-models/Qwen/Qwen3-Reranker-8B"
+
+# rerank后保留的文档数量
+rerank_topk: 30  # 从合并后的80个文档中rerank，保留30个
+
+rerank_batch_size: 4
+rerank_max_length: 8192
+rerank_use_fp16: True
+
+# ========== 改进3: 优化生成参数 ==========
+framework: "fschat"
+generator_model: "Qwen/Qwen2.5-14B-Instruct-1M"
+generator_model_path: "/public/huggingface-models/Qwen/Qwen2.5-14B-Instruct-1M"
+generator_batch_size: 1
+generator_max_input_len: 32768
+generation_params:
+  # 降低温度到0.1，提高确定性
+  temperature: 0.1
+  
+  # 减少max_tokens，防止生成过长文本和循环
+  max_tokens: 256  # 从512减少到256，防止循环
+  
+  top_p: 0.95
+
+use_fid: False
+gpu_memory_utilization: 0.85
+
+# ========== 改进4: IRCoT特定设置 ==========
+judger_name: ~
+pipeline_name: "ircot"
+
+# 减少迭代次数，避免陷入循环
+max_iter: 5  # 从8减少到5
+
+active_retrieval: True
+active_retrieval_k: 3
+thought_weight: 0.7
+max_context_size: 8192  # 增加max_context_size（从6144增加到8192），减少截断
+
+# ========== 关键修复：启用答案提取器（支持中英文） ==========
+# 这是最重要的修复！必须启用答案提取器
+# 支持中英文答案提取
+use_answer_extractor: True
+answer_extractor_method: "regex_and_keyword"
+# 支持中文字符（\u4e00-\u9fff）、英文字母、数字、中英文标点
+answer_pattern: '[\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9\-_\s.,;:()，。、]+'
+
+# ========== 关键修复：使用自定义prompt ==========
+# 使用改进的prompt模板，强制答案格式
+use_custom_prompt: True
+prompt_template_path: "/root/deepsearch_flashrag/prompts/ircot_concise_prompt.py"
+prompt_template_name: "IRCoTPrompt"
+
+# ========== 评估指标配置 ==========
+metrics: ["em", "f1"]
+metric_setting:
+  retrieval_recall_topk: 80  # 与multi_retriever_setting.topk保持一致
+  tokenizer_name: "gpt-3.5-turbo"
+save_metric_score: True
+
+# ========== 测试配置 ==========
+# 使用前20个样本进行测试
+test_sample_num: -1
+
+# ========== 运行命令 ==========
+# 使用以下命令运行BM25(pyserini)+E5并行检索测试：
+#
+# cd /root/deepsearch_flashrag
+# python scripts/run_improved_pipeline.py \
+#     --config configs/wq_v5_pyserini.yaml \
+#     --pipeline ircot \
+#     --use-custom-prompt \
+#     --sample-num 20
+

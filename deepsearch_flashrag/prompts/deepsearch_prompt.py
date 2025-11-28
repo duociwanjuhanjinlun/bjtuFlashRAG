@@ -1,5 +1,6 @@
 """
 针对DeepSearch复杂问题的优化Prompt模板
+通用复杂问题 prompt 模板，适用于标准 RAG 流程（Sequential/Adaptive Pipeline）
 """
 from flashrag.prompt.base_prompt import PromptTemplate
 

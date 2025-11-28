@@ -1,0 +1,124 @@
+# ========== 版本说明 ==========
+# r1_search_v1.yaml - SearchR1 Pipeline with Selective Context Refiner
+#
+# 基于 wq_v6.yaml 修改
+# 主要变动：
+# 1. Pipeline: 切换为 SearchR1Pipeline (DeepSeek-R1 风格推理+搜索)
+# 2. Refiner: 增加 Selective Context Refiner 用于压缩检索内容，适应复杂推理
+# 3. 参数调整: 针对 SearchR1 的 prompt 和生成参数进行微调
+
+# ========== 模型路径配置 ==========
+model2path:
+  e5: "intfloat/e5-base-v2"
+  bge: "BAAI/bge-base-en-v1.5"
+  bge-reranker-large: "BAAI/bge-reranker-large"
+  Qwen3-Reranker-8B: "Qwen/Qwen3-Reranker-8B"
+  llama3-8B-instruct: "meta-llama/Meta-Llama-3-8B-Instruct"
+  gpt2: "gpt2" # 用于 Selective Context
+
+model2pooling:
+  e5: "mean"
+  bge: "cls"
+  bge-reranker-large: "cls"
+
+# ========== 数据路径配置 ==========
+data_dir: "/data/bjtu_deepsearch/dataset/"
+save_dir: "/data/bjtu_deepsearch/output/"
+dataset_name: "deepsearch"
+split: ["test","btest","atest"]
+
+# ========== 运行环境配置 ==========
+gpu_id: "0"
+seed: 2024
+
+# ========== 数据保存配置 ==========
+save_intermediate_data: True
+save_note: "deepsearch_r1_search_selective_context_v1"
+
+# ========== 检索配置 (保持 wq_v6 的混合检索) ==========
+use_multi_retriever: True
+multi_retriever_setting:
+  merge_method: "rrf"
+  topk: 30
+  rrf_k: 20  # RRF 超参数，对于包含大量专有名词的数据集（如 Wiki18），降低 k 值可以提升 BM25 的权重
+             # 推荐范围：20-60，值越小 BM25 权重越高，值越大 E5 权重越高
+  
+  retriever_list:
+    - retrieval_method: "bm25"
+      index_path: "/root/deepsearch_flashrag/indexes/bm25_index/bm25"
+      corpus_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w.jsonl"
+      retrieval_topk: 20
+      bm25_backend: "bm25s"
+    
+    - retrieval_method: "e5"
+      retrieval_model_path: "/public/huggingface-models/intfloat/e5-base-v2"
+      index_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w_e5.index"
+      corpus_path: "/public/modelscope-datasets/hhjinjiajie/FlashRAG_Dataset/retrieval_corpus/wiki18_100w.jsonl"
+      retrieval_topk: 20
+      retrieval_pooling_method: "mean"
+      retrieval_use_fp16: True
+      retrieval_batch_size: 2
+      retrieval_query_max_length: 1024
+      instruction: "query: "  # 显式设置 E5 模型的查询前缀（至关重要！）
+                              # E5 模型在训练时使用了非对称指令，查询必须加 "query: " 前缀
+                              # 如果不加前缀，性能会下降 20% 以上
+
+# ========== Reranker 配置 ==========
+use_reranker: True
+rerank_model_name: "Qwen3-Reranker-8B"
+rerank_model_path: "/public/huggingface-models/Qwen/Qwen3-Reranker-8B"
+rerank_topk: 10 # SearchR1 需要更精简的上下文，减少 topk
+rerank_batch_size: 4
+rerank_max_length: 8192
+rerank_use_fp16: True
+
+# ========== Refiner 配置 (新增) ==========
+# 使用 Selective Context 压缩上下文
+# 注意：Refiner 是在检索后对文档进行压缩，不会影响查询
+# 如果发现关键实体被压缩掉，可以降低 reduce_ratio 或暂时关闭 Refiner 进行调试
+use_refiner: True
+refiner_name: "selective-context"
+refiner_model_path: "/public/huggingface-models/openai-community/gpt2" 
+refiner_config:
+  reduce_ratio: 0.35  # 压缩率，降低此值可以保留更多信息（包括关键实体）
+  reduce_level: "phrase"
+
+# ========== 查询优化配置 (新增) ==========
+# 启用查询改进功能，提升检索质量
+query_improver_config:
+  enabled: True  # 是否启用查询改进
+  use_ner: True  # 是否使用 NER 模型（需要安装 spaCy 和 en_core_web_sm）
+  multi_query: True  # 是否使用多查询策略（为每个问题生成多个查询变体）
+  multi_query_num: 2  # 多查询策略时生成的查询数量
+
+# ========== 生成器配置 ==========
+framework: "fschat"
+# 升级为 Qwen2.5-32B-Instruct (性能强于 14B，单卡80G需配合轻量Reranker)
+generator_model: "Qwen/Qwen2.5-32B-Instruct"
+generator_model_path: "/public/huggingface-models/Qwen/Qwen2.5-32B-Instruct"
+generator_batch_size: 1
+generator_max_input_len: 16384 # 限制输入长度以防止 OOM
+generation_params:
+  temperature: 0.5 # 推理任务通常需要一点随机性来探索思维链，但也可能是 0
+  max_tokens: 4096 # 每步生成的最大token数（足够输出完整的 <search> 或 <answer> 标签）
+  max_new_tokens: 4096 # 明确指定新生成的token数上限
+  top_p: 0.95
+
+use_fid: False
+gpu_memory_utilization: 0.98 # 提高显存利用率
+
+# ========== Pipeline 配置 ==========
+pipeline_name: "search_r1" # 自定义名称，脚本中映射
+max_iter: 4 # 最大搜索轮数
+active_retrieval_k: 3
+
+# ========== 评估配置 ==========
+metrics: ["em", "f1"]
+metric_setting:
+  retrieval_recall_topk: 50
+  tokenizer_name: "gpt-3.5-turbo"
+save_metric_score: True
+
+# ========== 测试配置 ==========
+test_sample_num: 10
+

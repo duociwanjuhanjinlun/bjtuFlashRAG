@@ -436,6 +436,11 @@ class DenseRetriever(BaseTextRetriever):
         if num is None:
             num = self.topk
         query_emb = self.encoder.encode(query)
+        
+        # Check if query_emb has expected shape (1, dim) or (dim,)
+        if len(query_emb.shape) == 1:
+            query_emb = query_emb.reshape(1, -1)
+            
         scores, idxs = self.index.search(query_emb, k=num)
         scores = scores.tolist()
         idxs = idxs[0]
@@ -456,7 +461,35 @@ class DenseRetriever(BaseTextRetriever):
 
         results = []
         scores = []
+        
+        # Fix: Ensure query list is not empty to avoid faiss error or shape mismatch
+        if len(query) == 0:
+             return ([], []) if return_score else []
+
         emb = self.encoder.encode(query, batch_size=batch_size, is_query=True)
+        
+        # Fix: Handle empty embedding result
+        if emb.size == 0:
+            # Return empty results if encoding failed
+            return ([], []) if return_score else []
+        
+        # Fix: Check embedding shape. If single query encoded to (dim,), reshape to (1, dim)
+        if len(emb.shape) == 1:
+            emb = emb.reshape(1, -1)
+        
+        # Fix: Verify embedding dimension matches index dimension
+        expected_dim = self.index.d if hasattr(self.index, 'd') else None
+        if expected_dim is not None and emb.shape[1] != expected_dim:
+            print(f"WARNING: Embedding dimension mismatch! Expected {expected_dim}, got {emb.shape[1]}")
+            print(f"  This may be due to input length exceeding model max_length, causing inconsistent padding.")
+            print(f"  Query batch size: {len(query)}, Embedding shape: {emb.shape}")
+            
+            # Try to handle: if dimension is close, it might be a padding issue
+            # For now, return empty results to allow other retrievers to continue
+            print(f"  Returning empty results for this retriever to allow others to continue.")
+            empty_results = [[] for _ in query]
+            return (empty_results, []) if return_score else empty_results
+            
         scores, idxs = self.index.search(emb, k=num)
         scores = scores.tolist()
         idxs = idxs.tolist()
@@ -586,6 +619,7 @@ class MultiRetrieverRouter:
     def __init__(self, config):
         self.merge_method = config["multi_retriever_setting"].get("merge_method", "concat")  # concat/rrf/rerank
         self.final_topk = config["multi_retriever_setting"].get("topk", 5)
+        self.rrf_k = config["multi_retriever_setting"].get("rrf_k", 60)  # RRF hyperparameter, default 60
         self.retriever_list = self.load_all_retriever(config)
         self.config = config
 
@@ -662,6 +696,10 @@ class MultiRetrieverRouter:
         if num is None:
             num = self.final_topk
 
+        # Fix: Handle empty query list gracefully
+        if isinstance(query, list) and len(query) == 0:
+            return ([], []) if return_score else []
+
         result_list = []
         score_list = []
 
@@ -686,18 +724,60 @@ class MultiRetrieverRouter:
             result = self.add_source(result, retriever)
             return result, score
 
+        # Fix: Ensure thread safety and order preservation
+        # ThreadPoolExecutor might not guarantee order of completion, but we need order of results to match retriever_list for reorder logic?
+        # Actually, reorder logic depends on the order of results appended to result_list.
+        # If we append as they complete, the order in result_list will be mixed up relative to retriever_list order if we are not careful.
+        # The reorder function assumes: result_list structure based on [retriever 1 results... retriever 2 results...] OR [query 1 results... query 2 results...]?
+        # looking at reorder: result_list[q_idx + r_idx * query_num] -> implies blocks of query_num results per retriever.
+        # So we must collect results in the order of retriever_list.
+        
+        # Using map or a list of futures to preserve order
+        
+        outputs = [None] * len(retriever_list)
+        
         with ThreadPoolExecutor(max_workers=4) as executor:
-            future_to_retriever = {
-                executor.submit(process_retriever, retriever): retriever for retriever in retriever_list
+            future_to_idx = {
+                executor.submit(process_retriever, retriever): i 
+                for i, retriever in enumerate(retriever_list)
             }
-            for future in as_completed(future_to_retriever):
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
                 try:
-                    result, score = future.result()
-                    result_list.extend(result)
-                    if score is not None:
-                        score_list.extend(score)
+                    outputs[idx] = future.result()
                 except Exception as e:
-                    print(f"Error processing retriever {future_to_retriever[future]}: {e}")
+                    error_msg = str(e)
+                    print(f"Error processing retriever {retriever_list[idx]}: {error_msg}")
+                    
+                    # Check if it's a dimension mismatch error
+                    if "size of tensor" in error_msg or "dimension" in error_msg.lower():
+                        print(f"  -> Dimension mismatch detected. This may be due to incompatible embedding dimensions between retrievers.")
+                        print(f"  -> Retriever type: {type(retriever_list[idx]).__name__}")
+                        if hasattr(retriever_list[idx], 'retrieval_method'):
+                            print(f"  -> Retrieval method: {retriever_list[idx].retrieval_method}")
+                    
+                    # If one fails, return empty results to avoid breaking the shape
+                    # This allows other retrievers to continue working
+                    if isinstance(query, list):
+                        empty_res = [[] for _ in query]
+                    else:
+                        empty_res = []
+                    outputs[idx] = (empty_res, None) if return_score else empty_res
+
+        # Now extend result_list in correct order
+        for output in outputs:
+            if output is not None:
+                # Handle both tuple (result, score) and single result formats
+                if isinstance(output, tuple):
+                    result, score = output
+                else:
+                    result = output
+                    score = None
+                
+                result_list.extend(result)
+                if score is not None:
+                    score_list.extend(score)
+
         result_list, score_list = self.reorder(result_list, score_list, retriever_list)
         result_list, score_list = self.post_process_result(query, result_list, score_list, num)
         if return_score:
@@ -717,8 +797,17 @@ class MultiRetrieverRouter:
         """
 
         retriever_num = len(retriever_list)
+        # Fix: Ensure query_num is correctly calculated even if result_list has different length than expected due to some error
+        if len(result_list) % retriever_num != 0:
+             warnings.warn(f"Result list length {len(result_list)} is not divisible by retriever number {retriever_num}. This might indicate an error in retrieval.")
+        
         query_num = len(result_list) // retriever_num
-        assert query_num * retriever_num == len(result_list)
+        
+        # Check if query_num matches expectation, if not, try to debug or fail gracefully
+        if query_num * retriever_num != len(result_list):
+             # Try to adjust query_num if possible, or just proceed with calculated query_num and ignore trailing elements (or error out if critical)
+             # For now, we'll stick to the original logic but with better error message
+             assert query_num * retriever_num == len(result_list), f"Mismatch: query_num={query_num}, retriever_num={retriever_num}, total_results={len(result_list)}"
 
         if isinstance(result_list[0], dict):
             return result_list, score_list
@@ -763,11 +852,11 @@ class MultiRetrieverRouter:
                     "Using multiple corpus may lead to conflicts in DOC IDs, which may result in incorrect rrf results!"
                 )
             if isinstance(result_list[0], dict):
-                result_list, score_list = self.rrf_merge([result_list], num, k=60)
+                result_list, score_list = self.rrf_merge([result_list], num, k=self.rrf_k)
                 result_list = result_list[0]
                 score_list = score_list[0]
             else:
-                result_list, score_list = self.rrf_merge(result_list, num, k=60)
+                result_list, score_list = self.rrf_merge(result_list, num, k=self.rrf_k)
             return result_list, score_list
         elif self.merge_method == "rerank":
             if isinstance(result_list[0], dict):
